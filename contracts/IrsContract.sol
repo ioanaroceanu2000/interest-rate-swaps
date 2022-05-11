@@ -24,12 +24,12 @@ contract IrsContract is ReentrancyGuard{
     uint marginAmount;
   }
 
-  uint notionalAmount;
-  address asset;
-  uint duration;
-  uint initTime;
-  uint initIndex;
-  uint fixedRatePerSecond;
+  uint public notionalAmount;
+  address public asset;
+  uint public duration;
+  uint public initTime;
+  uint public initIndex;
+  uint public fixedRatePerSecond;
 
   // @description Registers an IRS contract
   // @note all values must be provided with 18 decimals (apart from duration)
@@ -61,6 +61,7 @@ contract IrsContract is ReentrancyGuard{
     ft = Party(_ft, false, 0);
     vt = Party(_vt, false, 0);
   }
+
 
   // @description Called by parties to sign the contract and deposit their margin
   function signAndDepositMargin() public {

@@ -17,7 +17,7 @@ module.exports = function (deployer) {
       _initTime,
       web3.utils.toChecksumAddress('0x80d1b4141D7EF8585257E7b28711473EFBB6BDc9'),
       web3.utils.toChecksumAddress('0x80d1b4141D7EF8585257E7b28711473EFBB6BDc9'),
-      10000,
+      new BigNumber(1e18),
       web3.utils.toChecksumAddress('0x3c73A5E5785cAC854D468F727c606C07488a29D6')
     );
   });

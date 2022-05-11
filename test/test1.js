@@ -5,8 +5,8 @@ const BigNumber = require('bignumber.js');
 const Tx = require('ethereumjs-tx').Transaction;
 
 const IrsContract = artifacts.require("IrsContract");
+const Token = artifacts.require("Token");
 const AaveProtocolDataProvider = artifacts.require("AaveProtocolDataProvider");
-//const ERC20 = artifacts.require("@openzeppelin/contracts/token/ERC20/ERC20.sol");
 const web3  = new Web3("http://localhost:7545");
 
 contract('IrsContract', () => {
@@ -14,42 +14,49 @@ contract('IrsContract', () => {
   var _duration = 30;
   var _ft = web3.utils.toChecksumAddress('0x80d1b4141D7EF8585257E7b28711473EFBB6BDc9');
   var _vt = web3.utils.toChecksumAddress('0x220A865054bFa93184ed7Ee60796A8c75623441E');
-  var _fixedYearRate = 3000;
+  var _fixedYearRate = new BigNumber(1e18);
   var _initTime = null;
-  var _AAVE_CONTRACT = web3.utils.toChecksumAddress('0x3c73A5E5785cAC854D468F727c606C07488a29D6'); //check
+  var _AAVE_CONTRACT = web3.utils.toChecksumAddress('0x3c73A5E5785cAC854D468F727c606C07488a29D6');
   var _asset = web3.utils.toChecksumAddress('0x7079f3762805CFf9C979a5bDC6f5648bCFEE76C8');
+
   var usdcInstance = null;
   var aaveInstance = null;
-  const privateKeyAcc1 = '';
-  const privateKeyAcc0 = '';
+  const privateKeyAcc1 = '7a879a59323a171826fdbbab1573ab1f20274dc2cc57c11ca47f1c2485c96a24';
+  const privateKeyAcc0 = '475e5225a9f4a32a96d78fb82bf5493cd25caa5ca133456ee8a401b0876242d1';
   var accounts = null;
+  var contractInstance = null;
   before(async () => {
     let block = await web3.eth.getBlock("latest");
-    console.log(block);
-    var _initTime = block.timestamp;
-    _initTime += 300;
+    _initTime = block.timestamp + 300;
 
     accounts = await web3.eth.getAccounts();
     _ft = accounts[0];
     _vt = accounts[1];
-    //usdcInstance = await ERC20.at(_asset);
+    usdcInstance = await Token.new("USDC", "USDC");
+    _asset = usdcInstance.address;
     //aaveInstance = await AaveProtocolDataProvider.at(_AAVE_CONTRACT);
-    const contractInstance = await IrsContract.new(_asset,_notional,_duration,_initTime,_ft,_vt,_fixedYearRate,_AAVE_CONTRACT);
-
+    contractInstance = await IrsContract.new(_asset,_notional,_duration,_initTime,_ft,_vt,_fixedYearRate,_AAVE_CONTRACT);
   });
 
   it('should create the IRS contract', async () => {
-    assert.equal(contractInstance.fixedRatePerSecond, _fixedYearRate, "Wrong fiex rate");
-    assert.equal(contractInstance.ft.signed, false, "Signed not false");
-    assert.equal(contractInstance.vt.signed, false, "Signed not false");
-    assert.equal(contractInstance.ft.wallet, _ft, "Wrong address");
-    assert.equal(contractInstance.vt.wallet, _vt, "Wrong address");
+    var fixedRate = await contractInstance.fixedRatePerSecond();
+    var expectedRate = new BigNumber(1e18);
+    expectedRate = expectedRate.plus(31709791983);
+    assert.equal(fixedRate.toString(), expectedRate.toString(), "Wrong fiex rate");
+
+    var ft = await contractInstance.ft();
+    var vt = await contractInstance.vt();
+    assert.equal(ft['signed'], false, "Signed not false");
+    assert.equal(vt['signed'], false, "Signed not false");
+    assert.equal(ft['wallet'], _ft, "Wrong address");
+    assert.equal(vt['wallet'], _vt, "Wrong address");
   });
+
   it('should not create the IRS contract', async () => {
-    var _initTime2 = _initTime.add(1000);
+    var _initTime2 = _initTime - 100000;
     var error = false;
     try{
-      const contractInstance2 = await IrsContract.new(_asset,
+      var contractInstance2 = await IrsContract.new(_asset,
           _notional,
           _duration,
           _initTime2,
@@ -66,29 +73,20 @@ contract('IrsContract', () => {
   });
 
   it('should sign and deposit', async () => {
-    givePermissionToContract(accounts[0], privateKeyAcc0, contractInstance.address, _notional/10, usdcInstance,_USDC_ADDRESS);
+    givePermissionToContract(accounts[0], privateKeyAcc0, contractInstance.address, _notional/10, usdcInstance, _asset);
+    var balance;
+    await usdcInstance.balanceOf(accounts[0]).then(res =>{
+      balance = res;
+    });
+    console.log(balance);
     await contractInstance.signAndDepositMargin();
 
-    assert.equal(contractInstance.ft.signed, true, "It didn't sign");
+    var ft = await contractInstance.ft();
+    assert.equal(ft['signed'], true, "It didn't sign");
 
     var balance;
-    await usdcInstance.methods.balanceOf(contractInstance.address).call().then(res =>{ balance = res; });
+    await usdcInstance.balanceOf(contractInstance.address).then(res =>{ balance = res; });
     assert.equal(balance, _notional/10, "It didn't deposit margin");
-  });
-
-  it('should sign and deposit again', async () => {
-    givePermissionToContract(accounts[1], privateKeyAcc1, contractInstance.address, _notional/10, usdcInstance,_USDC_ADDRESS);
-    await signFromAccount(accounts[1], privateKeyAcc1, contractInstance.address, contractInstance);
-
-    assert.equal(contractInstance.vt.signed, true, "It didn't sign");
-
-    var balance;
-    await usdcInstance.methods.balanceOf(contractInstance.address).call().then(res =>{ balance = res; });
-    assert.equal(balance, _notional/5, "It didn't deposit margin");
-    assert.notEqual(contractInstance.initIndex, 0, "It didn't retrieve liquidity index");
-  });
-
-  it('should settle contract', async () => {
   });
 
 });
@@ -120,7 +118,7 @@ async function givePermissionToContract(account, privateKey, contractAddress, am
     from: account,
     to: tokenAddress,
     gasLimit: web3.utils.toHex(200000),
-    data: tokenInstance.methods.approve(contractAddress, amount).encodeABI()
+    data: tokenInstance.contract.methods.approve(contractAddress, amount).encodeABI()
   };
   // private key of the second account
   var privateKey = new Buffer(privateKey, 'hex');
