@@ -47,9 +47,9 @@ contract IrsContract is ReentrancyGuard{
     address _ft,
     address _vt,
     uint128 _fixedYearRate,
-    address _AAVE_CONTRACT) public
+    address _AAVE_CONTRACT)
   {
-    require(block.timestamp < _initTime, "please choose a time in the future");
+    require(block.timestamp < _initTime, "Choose a time in the future");
     AAVE_CONTRACT = _AAVE_CONTRACT;
 
     asset = _asset;
@@ -66,7 +66,6 @@ contract IrsContract is ReentrancyGuard{
   // @description Called by parties to sign the contract and deposit their margin
   function signAndDepositMargin() public {
     require(block.timestamp <= initTime, "Missed deadline");
-    initTime = block.timestamp;
 
     // deposit margin
     uint marginAmount = notionalAmount/10;
@@ -82,6 +81,7 @@ contract IrsContract is ReentrancyGuard{
 
     // record initial yield index when both signatures are gathered
     if(ft.signed && vt.signed){
+      initTime = block.timestamp;
       (,,,,,,,initIndex,,) = AaveProtocolDataProvider(AAVE_CONTRACT).getReserveData(asset);
     }
 
@@ -98,6 +98,8 @@ contract IrsContract is ReentrancyGuard{
     (uint diff, Party memory winner, Party memory loser) = getDiff();
     require(diff <= ft.marginAmount, "This should have been liquidated by now");
 
+    vt.signed = false;
+    ft.signed = false;
     ERC20(asset).transfer(winner.wallet, diff + winner.marginAmount);
     ERC20(asset).transfer(loser.wallet, loser.marginAmount - diff);
   }
@@ -105,7 +107,7 @@ contract IrsContract is ReentrancyGuard{
   // @description Liquidates the contract in case margin falls under 7%
   // Liquidator receives up to 20% of margin
   // @params toLiquidate: address of party at risk
-  function liquidate(address toLiquidate) external nonReentrant{
+  function liquidate(address toLiquidate) public nonReentrant{
     require(ft.signed && vt.signed, "Contract not yet signed");
 
     (uint diff, Party memory winner, Party memory loser) = getDiff();
@@ -119,6 +121,8 @@ contract IrsContract is ReentrancyGuard{
     uint forLiquidator = SafeMath.div(SafeMath.mul(loser.marginAmount, 2), 10);
     // case 1: after paying the winner, liquidator can be given 20% of margin
     // case 1: else, pay liquidator only what's left of the loser's margin
+    ft.signed = false;
+    vt.signed = false;
     if(loser.marginAmount > SafeMath.add(forLiquidator, diff)){
       ERC20(asset).transfer(msg.sender, forLiquidator);
       loser.marginAmount = SafeMath.sub(SafeMath.sub(loser.marginAmount, forLiquidator), diff);
@@ -134,10 +138,11 @@ contract IrsContract is ReentrancyGuard{
     (,,,,,,,uint currentIndex,,)= AaveProtocolDataProvider(AAVE_CONTRACT).getReserveData(asset); // * 10^27
     require(currentIndex > initIndex);
 
+    uint siceInit = block.timestamp - initTime;
     uint valueFixed = SafeMath.div(SafeMath.mul(currentIndex, notionalAmount), initIndex); // 18 dec
     uint valueVariable = SafeMath.div(
       SafeMath.mul(
-        uint(PRBMathSD59x18.pow(int(fixedRatePerSecond), int(duration))),
+        uint(PRBMathSD59x18.pow(int(fixedRatePerSecond), int(siceInit))),
         notionalAmount),
       1e18); // 18 dec
 
